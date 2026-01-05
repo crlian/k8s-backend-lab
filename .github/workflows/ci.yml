@@ -36,3 +36,36 @@ jobs:
           docker build -t $IMAGE:${{ github.sha }} -t $IMAGE:latest .
           docker push $IMAGE:${{ github.sha }}
           docker push $IMAGE:latest
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd ~/k8s-backend-lab
+            # crea/actualiza compose si no existe (simple)
+            if [ ! -f docker-compose.yml ]; then
+              cat > docker-compose.yml << 'EOF'
+            services:
+              app:
+                image: ghcr.io/crlian/k8s-backend-lab:latest
+                container_name: k8s-backend-lab
+                ports:
+                  - "8080:8080"
+                restart: unless-stopped
+            EOF
+            fi
+
+            echo "${{ secrets.GHCR_READ_TOKEN }}" | docker login ghcr.io -u crlian --password-stdin
+            docker compose pull
+            docker compose up -d
+            docker image prune -f
+            
+    
